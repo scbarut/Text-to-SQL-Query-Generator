@@ -95,32 +95,6 @@ def sql_engine(query: str) -> str:
     return my_dumps(output)
 
 
-@tool
-def sql_engine_last(query: str) -> str:
-    """
-    Allows you to perform SQL queries on the table. Returns the result as a JSON string.
-    The table is named 'employees'. Its description is as follows:
-        Columns:
-        - id : Integer
-        - first_name : String
-        - last_name : String
-        - gender : String
-        - date_of_birth : String
-        - email : String
-        - phone : String
-
-    Args:
-        query: The query to perform. This should be correct SQL.
-
-    """
-    output = []
-    with engine.connect() as con:
-        rows = con.execute(text(query))
-        columns = rows.keys()
-        for row in rows:
-            output.append(dict(zip(columns, row)))
-    return json.dumps(output)  # JSON olarak döndür
-
 
 @tool
 def sql_tool(query: str) -> str:
