@@ -53,18 +53,23 @@ def get_db():
 @tool
 def sql_engine(query: str) -> str:
     """
-    Executes the given SQL query on the 'employees' table and returns the result as a JSON-formatted string.
+    Executes the given SQL SELECT query on the 'employees' table and returns the result as a JSON-formatted string.
+    This function is designed to handle only SELECT queries for retrieving data from the 'employees' table.
+
     The table is named 'employees'. Its description is as follows:
-        - id : Integer
-        - first_name : String
-        - last_name : String
-        - gender : String
-        - date_of_birth : String
-        - email : String
-        - phone : String
+    - id : Integer
+    - first_name : String
+    - last_name : String
+    - gender : String
+    - date_of_birth : String
+    - email : String
+    - phone : String
 
     Args:
-        query: A valid SQL query to execute.
+        query: A valid SQL SELECT query to execute.
+
+    Returns:
+        The result of the query as a JSON-formatted string.
     """
     output = []
     with engine.connect() as con:
@@ -98,10 +103,10 @@ def sql_engine(query: str) -> str:
 
 @tool
 def sql_tool(query: str) -> str:
-    """Execute SQL queries on the employees table including modifications.
+    """Execute SQL queries (INSERT, UPDATE, DELETE) on the employees table including modifications.
 
     Args:
-        query: SQL query to execute (INSERT, UPDATE, DELETE, etc). This should be correct SQL.
+        query: SQL query to execute (INSERT, UPDATE, DELETE). This should be correct SQL.
     Returns:
         Success message or error details
     """
@@ -116,6 +121,7 @@ def sql_tool(query: str) -> str:
             return "Query executed successfully"
     except Exception as e:
         return f"Error executing query: {str(e)}"
+
 
 @app.post("/convert")
 async def convert_text_to_sql(request: Request, db: Session = Depends(get_db)):
@@ -133,3 +139,4 @@ async def convert_text_to_sql(request: Request, db: Session = Depends(get_db)):
         return {"result": result}
     except Exception as e:
         return {"error": str(e)}
+
