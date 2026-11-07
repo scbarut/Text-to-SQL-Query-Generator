@@ -1,0 +1,390 @@
+import React, { useState } from 'react';
+import {
+  Send,
+  Database,
+  Terminal,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Check,
+  AlertCircle,
+  Table as TableIcon,
+  Search,
+} from 'lucide-react';
+
+interface Column {
+  name: string;
+  type: string;
+}
+
+interface QueryResponse {
+  sql: string;
+  explanation: string;
+  columns: Column[];
+  rows: (string | number | boolean | null)[][];
+  total_count: number;
+}
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const SAMPLE_QUERIES = [
+  'Show all employees who are female',
+  'List employees sorted by last name',
+  'Find all employees with a gmail.com email address',
+  'Count employees grouped by gender',
+];
+
+export function App() {
+  const [question, setQuestion] = useState('');
+  const [result, setResult] = useState<QueryResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [sqlExpanded, setSqlExpanded] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [filterText, setFilterText] = useState('');
+
+  const handleExecuteQuery = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!question.trim() || loading) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${API_BASE_URL}/query`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question: question.trim() }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          errorData?.detail || `Server responded with status ${response.status}`
+        );
+      }
+
+      const data: QueryResponse = await response.json();
+      setResult(data);
+      setFilterText('');
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : 'Failed to connect to the backend server. Please verify it is running.';
+      setError(message);
+      console.error('Query execution error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCopySql = () => {
+    if (!result?.sql) return;
+    navigator.clipboard.writeText(result.sql);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const filteredRows = React.useMemo(() => {
+    if (!result || !filterText.trim()) return result?.rows || [];
+    const query = filterText.toLowerCase();
+    return result.rows.filter((row) =>
+      row.some((cell) => cell !== null && String(cell).toLowerCase().includes(query))
+    );
+  }, [result, filterText]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
+      {/* Top Navigation Bar */}
+      <nav className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-600 rounded-lg text-white shadow-sm">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-slate-800 flex items-center gap-2">
+                Text-to-SQL Generator
+                <span className="text-xs font-semibold px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-full">
+                  v2.0
+                </span>
+              </h1>
+              <p className="text-xs text-slate-500">
+                Powered by Gemini 2.5 Flash Lite & Read-Only SQLite
+              </p>
+            </div>
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Container */}
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 pt-8 space-y-6">
+        {/* Input Card */}
+        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+          <form onSubmit={handleExecuteQuery} className="space-y-4">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label
+                  htmlFor="query-input"
+                  className="text-sm font-semibold text-slate-700 flex items-center gap-1.5"
+                >
+                  <Sparkles className="w-4 h-4 text-blue-600" />
+                  Natural Language Query
+                </label>
+                <span className="text-xs text-slate-400">
+                  Ctrl + Enter to run
+                </span>
+              </div>
+              <textarea
+                id="query-input"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    handleExecuteQuery();
+                  }
+                }}
+                className="w-full h-28 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-800 placeholder-slate-400 resize-none transition-all shadow-inner font-sans text-sm"
+                placeholder="Ask a question about your database (e.g. 'Show me all female employees with an email ending in .com')..."
+              />
+            </div>
+
+            {/* Example Query Pills */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <span className="text-xs font-medium text-slate-500">Try asking:</span>
+              {SAMPLE_QUERIES.map((sample, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onClick={() => setQuestion(sample)}
+                  className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-md transition-colors border border-slate-200/60"
+                >
+                  {sample}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="submit"
+                disabled={loading || !question.trim()}
+                className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                {loading ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    <span>Executing Query...</span>
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4" />
+                    <span>Run Query</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        {/* Error Banner */}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in fade-in">
+            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-semibold text-red-800">
+                Query Processing Error
+              </h3>
+              <p className="text-sm text-red-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Loading Skeleton */}
+        {loading && (
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-4 animate-pulse">
+            <div className="h-4 bg-slate-200 rounded w-1/4" />
+            <div className="h-20 bg-slate-100 rounded" />
+            <div className="h-4 bg-slate-200 rounded w-1/3 pt-4" />
+            <div className="h-40 bg-slate-100 rounded" />
+          </div>
+        )}
+
+        {/* Result Container */}
+        {result && !loading && (
+          <div className="space-y-6">
+            {/* Generated SQL Panel (Collapsible, Expanded by default) */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div
+                className="flex items-center justify-between px-6 py-4 bg-slate-50/80 border-b border-slate-200 cursor-pointer select-none"
+                onClick={() => setSqlExpanded(!sqlExpanded)}
+              >
+                <div className="flex items-center gap-2">
+                  <Terminal className="w-4 h-4 text-blue-600" />
+                  <h2 className="text-sm font-bold text-slate-800">
+                    Generated SQL
+                  </h2>
+                  <span className="text-xs px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full font-medium">
+                    Verified SELECT
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopySql();
+                    }}
+                    className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2 py-1 rounded shadow-2xs transition-colors"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span className="text-emerald-600 font-medium">Copied!</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Copy SQL</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-slate-600 p-1"
+                    aria-label={sqlExpanded ? 'Collapse SQL' : 'Expand SQL'}
+                  >
+                    {sqlExpanded ? (
+                      <ChevronUp className="w-4 h-4" />
+                    ) : (
+                      <ChevronDown className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {sqlExpanded && (
+                <div className="p-6 space-y-4 bg-white">
+                  {/* Explanation */}
+                  <div className="bg-blue-50/60 border border-blue-100 rounded-lg p-3.5 text-sm text-slate-700 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold text-blue-900">Explanation: </span>
+                      <span>{result.explanation}</span>
+                    </div>
+                  </div>
+
+                  {/* SQL Code Block */}
+                  <div className="relative">
+                    <pre className="bg-slate-900 text-emerald-400 rounded-lg p-4 text-xs font-mono overflow-x-auto shadow-inner leading-relaxed">
+                      <code>{result.sql}</code>
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Interactive Data Table */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <TableIcon className="w-4 h-4 text-blue-600" />
+                  <h2 className="text-sm font-bold text-slate-800">
+                    Query Results
+                  </h2>
+                  <span className="text-xs text-slate-500 font-medium">
+                    (Displaying {filteredRows.length} of {result.total_count} {result.total_count === 1 ? 'row' : 'rows'})
+                  </span>
+                </div>
+
+                {/* In-table Search Filter */}
+                {result.rows.length > 0 && (
+                  <div className="relative w-full sm:w-64">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={filterText}
+                      onChange={(e) => setFilterText(e.target.value)}
+                      placeholder="Filter records..."
+                      className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-800"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {result.rows.length === 0 ? (
+                <div className="p-12 text-center text-slate-500 text-sm">
+                  No records found matching the query.
+                </div>
+              ) : filteredRows.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-sm">
+                  No records match your filter &ldquo;{filterText}&rdquo;.
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50/90 sticky top-0 z-1 backdrop-blur-xs">
+                      <tr>
+                        {result.columns.map((col, idx) => (
+                          <th
+                            key={idx}
+                            scope="col"
+                            className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>{col.name}</span>
+                              <span className="text-[10px] lowercase px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600 font-normal">
+                                {col.type}
+                              </span>
+                            </div>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-slate-100">
+                      {filteredRows.map((row, rowIdx) => (
+                        <tr
+                          key={rowIdx}
+                          className="hover:bg-blue-50/30 transition-colors"
+                        >
+                          {row.map((cell, cellIdx) => (
+                            <td
+                              key={cellIdx}
+                              className="px-6 py-3.5 whitespace-nowrap text-slate-700 text-xs font-mono"
+                            >
+                              {cell === null ? (
+                                <span className="text-slate-400 italic">null</span>
+                              ) : typeof cell === 'boolean' ? (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[11px] font-medium ${
+                                    cell
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : 'bg-rose-50 text-rose-700'
+                                  }`}
+                                >
+                                  {cell ? 'true' : 'false'}
+                                </span>
+                              ) : (
+                                String(cell)
+                              )}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </main>
+    </div>
+  );
+}
+
+export default App;
