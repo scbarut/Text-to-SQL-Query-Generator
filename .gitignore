@@ -31,4 +31,16 @@ dist-ssr
 .env*.local
 !.env.example
 
+# Python & testing cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.deepeval/
+.deepeval-cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
 skills-lock.json
