@@ -1,5 +1,11 @@
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,34 +13,24 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-/.agents
-/.vscode
-
-# Environment variables
+# Environment & Secrets
 .env
 .env*.local
 !.env.example
 
-# Python & testing cache
+# Python Caches & Bytecode
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python Testing & Type Checking
 .pytest_cache/
 .deepeval/
 .deepeval-cache/
@@ -43,4 +39,32 @@ __pycache__/
 .coverage
 htmlcov/
 
+# Python Packaging & Distribution
+build/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+*.egg-info/
+
+# SQLite Temporary / Journal Files (allows demo sql_app.db to remain tracked)
+*.db-journal
+*.db-wal
+*.db-shm
+
+# IDE & OS Files
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vscode/*
+!.vscode/extensions.json
+
+# Agents & Tooling Local State
+/.agents
 skills-lock.json

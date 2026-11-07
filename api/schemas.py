@@ -2,7 +2,7 @@ from typing import Any, List
 from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
-    question: str = Field(..., min_length=1, description="Natural language question to query the database")
+    question: str = Field(..., min_length=1, max_length=1000, description="Natural language question to query the database")
 
 class ColumnInfo(BaseModel):
     name: str

@@ -1,10 +1,9 @@
-# Dinamik Schema — ORM Modelleri Olmadan
+# Dynamic Schema — Without ORM Models
 
-Sistem herhangi bir SQLite veritabanı dosyasını dinamik olarak destekleyecek. ORM modelleri (`SQLAlchemy declarative models`) kullanmıyoruz çünkü dinamik schema discovery ile çelişir: her tablo için önceden Python sınıfı yazmak, "herhangi bir DB'yi bağla" amacını bozar. Bunun yerine `sqlite_master`'dan DDL olarak schema çekiliyor, LLM'e system prompt'ta veriliyor ve sorgular `text()` ile read-only bağlantıda çalıştırılıyor. Yazma işlemi olmadığı için (sadece SELECT + WITH) ORM'nin sağladığı tip güvenliği ve migration avantajları geçersiz.
+The system dynamically supports arbitrary SQLite database files. We do not use ORM models (`SQLAlchemy declarative models`) because static models conflict with dynamic schema discovery: writing Python classes in advance for every table undermines the goal of connecting arbitrary databases. Instead, the schema is extracted as DDL directly from `sqlite_master`, provided to the LLM in the system prompt, and queries are executed using `text()` over a read-only database connection. Since there are no write operations (only SELECT + WITH statements are permitted), the type safety and migration benefits typically provided by an ORM do not apply.
 
 ## Consequences
 
-- Tablo yapısı değiştiğinde Python kodu değişmez — sadece `/refresh-schema` çağrısı yeterli.
-- Compile-time tip güvenliği yok; hatalı sütun isimleri runtime'da yakalanır (DB hata mesajı ile).
-- Yeni bir SQLite dosyası bağlamak için sadece `DATABASE_URL` env değişkeni değiştirilir, kod değişikliği gerekmez.
-
+- When the table structure changes, Python application code does not change — calling `/refresh-schema` is sufficient.
+- No compile-time type safety; invalid column names are caught at runtime via database error messages.
+- Connecting a different SQLite file requires only updating the `DATABASE_URL` environment variable, with no code modifications required.

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Toaster, toast } from 'sonner';
 import {
   Send,
   Database,
@@ -8,7 +9,8 @@ import {
   ChevronUp,
   Copy,
   Check,
-  AlertCircle,
+  AlertTriangle,
+  ShieldAlert,
   Table as TableIcon,
   Search,
 } from 'lucide-react';
@@ -35,11 +37,17 @@ const SAMPLE_QUERIES = [
   'Count employees grouped by gender',
 ];
 
+interface InlineErrorState {
+  title: string;
+  message: string;
+  isSecurityViolation: boolean;
+}
+
 export function App() {
   const [question, setQuestion] = useState('');
   const [result, setResult] = useState<QueryResponse | null>(null);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [inlineError, setInlineError] = useState<InlineErrorState | null>(null);
   const [sqlExpanded, setSqlExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
   const [filterText, setFilterText] = useState('');
@@ -50,7 +58,7 @@ export function App() {
 
     try {
       setLoading(true);
-      setError(null);
+      setInlineError(null);
 
       const response = await fetch(`${API_BASE_URL}/query`, {
         method: 'POST',
@@ -62,20 +70,59 @@ export function App() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => null);
-        throw new Error(
-          errorData?.detail || `Server responded with status ${response.status}`
-        );
+        const rawDetail = errorData?.detail;
+        let detailMessage = `Server responded with status ${response.status}`;
+        if (typeof rawDetail === 'string') {
+          detailMessage = rawDetail;
+        } else if (Array.isArray(rawDetail)) {
+          detailMessage = rawDetail
+            .map((item: { msg?: string }) => item?.msg || JSON.stringify(item))
+            .join('; ');
+        } else if (rawDetail && typeof rawDetail === 'object') {
+          detailMessage = JSON.stringify(rawDetail);
+        }
+
+        if (response.status === 429) {
+          toast.error('Rate Limit Exceeded', {
+            description: detailMessage || 'You have exceeded the limit of 30 requests per minute. Please wait a moment and try again.',
+          });
+          return;
+        }
+
+        if (response.status >= 500) {
+          toast.error('Server Error', {
+            description: 'The backend service encountered an unexpected error. Please retry shortly.',
+          });
+          return;
+        }
+
+        const isSecurity =
+          detailMessage.toLowerCase().includes('security') ||
+          detailMessage.toLowerCase().includes('injection') ||
+          detailMessage.toLowerCase().includes('blocked') ||
+          detailMessage.toLowerCase().includes('prohibited');
+
+        setInlineError({
+          title: isSecurity ? 'Security Violation' : 'Query Rejection',
+          message: detailMessage,
+          isSecurityViolation: isSecurity,
+        });
+        setResult(null);
+        return;
       }
 
       const data: QueryResponse = await response.json();
       setResult(data);
+      setInlineError(null);
       setFilterText('');
     } catch (err: unknown) {
       const message =
         err instanceof Error
           ? err.message
           : 'Failed to connect to the backend server. Please verify it is running.';
-      setError(message);
+      toast.error('Connection Error', {
+        description: message,
+      });
       console.error('Query execution error:', err);
     } finally {
       setLoading(false);
@@ -99,6 +146,7 @@ export function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-16">
+      <Toaster richColors position="top-right" />
       {/* Top Navigation Bar */}
       <nav className="bg-white border-b border-slate-200 px-6 py-4 sticky top-0 z-10 shadow-sm">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
@@ -135,14 +183,31 @@ export function App() {
                   <Sparkles className="w-4 h-4 text-blue-600" />
                   Natural Language Query
                 </label>
-                <span className="text-xs text-slate-400">
-                  Ctrl + Enter to run
-                </span>
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`text-xs ${
+                      question.length >= 1000
+                        ? 'text-red-600 font-semibold'
+                        : question.length > 900
+                        ? 'text-amber-600 font-medium'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    {question.length} / 1,000
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    Ctrl + Enter to run
+                  </span>
+                </div>
               </div>
               <textarea
                 id="query-input"
                 value={question}
-                onChange={(e) => setQuestion(e.target.value)}
+                maxLength={1000}
+                onChange={(e) => {
+                  setQuestion(e.target.value);
+                  if (inlineError) setInlineError(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
@@ -191,15 +256,40 @@ export function App() {
           </form>
         </div>
 
-        {/* Error Banner */}
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in fade-in">
-            <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-            <div>
-              <h3 className="text-sm font-semibold text-red-800">
-                Query Processing Error
+        {/* Inline Warning Banner for Query Rejections / Security Violations */}
+        {inlineError && (
+          <div
+            className={`rounded-xl p-4 flex items-start gap-3 shadow-sm animate-in fade-in border ${
+              inlineError.isSecurityViolation
+                ? 'bg-amber-50/90 border-amber-300 text-amber-900'
+                : 'bg-red-50/90 border-red-200 text-red-900'
+            }`}
+          >
+            {inlineError.isSecurityViolation ? (
+              <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+            ) : (
+              <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <h3
+                className={`text-sm font-semibold ${
+                  inlineError.isSecurityViolation ? 'text-amber-900' : 'text-red-800'
+                }`}
+              >
+                {inlineError.title}
               </h3>
-              <p className="text-sm text-red-700 mt-0.5">{error}</p>
+              <p
+                className={`text-sm mt-1 leading-relaxed ${
+                  inlineError.isSecurityViolation ? 'text-amber-800' : 'text-red-700'
+                }`}
+              >
+                {inlineError.message}
+              </p>
+              {inlineError.isSecurityViolation && (
+                <p className="text-xs text-amber-700/80 mt-2 font-medium">
+                  Defense-in-depth policy active: destructive keywords, multi-statement queries, and prompt injection signatures are blocked.
+                </p>
+              )}
             </div>
           </div>
         )}
@@ -239,7 +329,7 @@ export function App() {
                       e.stopPropagation();
                       handleCopySql();
                     }}
-                    className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2 py-1 rounded shadow-2xs transition-colors"
+                    className="flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-2 py-1 rounded shadow-sm transition-colors"
                   >
                     {copied ? (
                       <>
@@ -327,7 +417,7 @@ export function App() {
               ) : (
                 <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
                   <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                    <thead className="bg-slate-50/90 sticky top-0 z-1 backdrop-blur-xs">
+                    <thead className="bg-slate-50/90 sticky top-0 z-10 backdrop-blur-sm">
                       <tr>
                         {result.columns.map((col, idx) => (
                           <th
