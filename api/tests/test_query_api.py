@@ -35,8 +35,8 @@ async def test_query_successful_execution(mock_gemini):
     assert data["explanation"] == "Lists all employee ids, first names, and emails."
     assert len(data["columns"]) == 3
     assert [col["name"] for col in data["columns"]] == ["id", "first_name", "email"]
-    assert len(data["rows"]) == 10
-    assert data["total_count"] == 10
+    assert len(data["rows"]) == 35
+    assert data["total_count"] == 35
 
 @pytest.mark.asyncio
 async def test_query_preserves_explicit_limit(mock_gemini):

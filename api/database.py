@@ -1,13 +1,19 @@
 import os
 import re
-from typing import Any, List, Tuple, Optional
+from typing import Any, List, Tuple, Optional, Dict
 import sqlparse
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 from api.config import settings
 from dataclasses import dataclass
-from api.schemas import ColumnInfo
+from api.schemas import (
+    ColumnInfo,
+    ColumnMetadata,
+    ForeignKeyInfo,
+    TableSchema,
+    DatabaseSchemaResponse,
+)
 
 @dataclass
 class ExecutionResult:
@@ -82,14 +88,128 @@ def apply_limit(sql: str, default_limit: int = 1000) -> str:
 
     return sql
 
-def get_schema_ddl(eng: Optional[Engine] = None) -> str:
-    """Discovers schema DDL statements from sqlite_master."""
+_schema_cache: Dict[str, DatabaseSchemaResponse] = {}
+
+def invalidate_schema_cache(eng: Optional[Engine] = None) -> None:
+    """Invalidates the in-memory schema metadata and DDL cache for an engine or all engines."""
+    global _schema_cache
+    if eng is not None:
+        cache_key = str(eng.url)
+        _schema_cache.pop(cache_key, None)
+    else:
+        _schema_cache.clear()
+
+def get_database_name(eng: Engine) -> str:
+    """Extracts a human-friendly database name from the engine."""
+    if eng.url.database:
+        return os.path.basename(eng.url.database)
+    url_str = str(eng.url)
+    if ":memory:" in url_str or url_str == "sqlite://":
+        return ":memory:"
+    if "file:" in url_str:
+        file_part = url_str.split("file:")[1].split("?")[0]
+        return os.path.basename(file_part)
+    return "sqlite.db"
+
+def get_schema_metadata(
+    eng: Optional[Engine] = None,
+    force_refresh: bool = False
+) -> DatabaseSchemaResponse:
+    """
+    Discovers complete schema metadata from sqlite_master and PRAGMAs.
+    Returns tables, columns, foreign keys, row counts, and full DDL.
+    Caches the discovered schema in memory keyed by engine URL until invalidated.
+    """
+    global _schema_cache
     target_engine = eng or engine
+    cache_key = str(target_engine.url)
+
+    if not force_refresh and cache_key in _schema_cache:
+        return _schema_cache[cache_key]
+
+    db_name = get_database_name(target_engine)
+    tables: List[TableSchema] = []
+    ddl_statements: List[str] = []
+
     with target_engine.connect() as conn:
-        rows = conn.execute(
-            text("SELECT sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        # Extract tables and their DDL from sqlite_master
+        master_rows = conn.execute(
+            text("SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
         ).fetchall()
-        return "\n\n".join(row[0] for row in rows if row[0])
+
+        for name, sql in master_rows:
+            if not sql:
+                continue
+
+            clean_ddl = sql.strip()
+            ddl_statements.append(clean_ddl)
+
+            # Columns via PRAGMA table_info using named mapping
+            col_rows = conn.execute(text(f'PRAGMA table_info("{name}")')).mappings().fetchall()
+            columns: List[ColumnMetadata] = []
+            for col in col_rows:
+                c_name = str(col["name"])
+                c_type = str(col["type"]).upper() if col["type"] else "TEXT"
+                notnull = bool(col["notnull"])
+                pk = bool(col["pk"] > 0)
+                columns.append(
+                    ColumnMetadata(
+                        name=c_name,
+                        type=c_type,
+                        primary_key=pk,
+                        nullable=not notnull,
+                    )
+                )
+
+            # Foreign keys via PRAGMA foreign_key_list using named mapping
+            fk_rows = conn.execute(text(f'PRAGMA foreign_key_list("{name}")')).mappings().fetchall()
+            foreign_keys: List[ForeignKeyInfo] = []
+            for fk in fk_rows:
+                from_col = str(fk["from"])
+                ref_tbl = str(fk["table"])
+                to_col = str(fk["to"])
+                foreign_keys.append(
+                    ForeignKeyInfo(
+                        column=from_col,
+                        referred_table=ref_tbl,
+                        referred_column=to_col,
+                    )
+                )
+
+            # Row count
+            try:
+                row_count = conn.execute(text(f'SELECT COUNT(*) FROM "{name}"')).scalar()
+                row_count_val = int(row_count) if row_count is not None else 0
+            except Exception:
+                row_count_val = None
+
+            tables.append(
+                TableSchema(
+                    name=name,
+                    columns=columns,
+                    foreign_keys=foreign_keys,
+                    row_count=row_count_val,
+                    ddl=clean_ddl,
+                )
+            )
+
+    combined_ddl = "\n\n".join(ddl_statements)
+    schema_response = DatabaseSchemaResponse(
+        database_name=db_name,
+        tables=tables,
+        ddl=combined_ddl,
+    )
+
+    _schema_cache[cache_key] = schema_response
+    return schema_response
+
+def get_schema_ddl(
+    eng: Optional[Engine] = None,
+    force_refresh: bool = False
+) -> str:
+    """Discovers schema DDL statements from sqlite_master with in-memory caching."""
+    metadata = get_schema_metadata(eng, force_refresh=force_refresh)
+    return metadata.ddl
 
 DATE_REGEX = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}:\d{2})?$")
 

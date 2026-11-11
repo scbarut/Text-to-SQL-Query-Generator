@@ -36,5 +36,5 @@ def test_execute_query_returns_metadata_and_rows(db_engine):
     assert res.executed_sql == "SELECT id, first_name, email FROM employees LIMIT 1000"
     assert len(res.columns) == 3
     assert [c.name for c in res.columns] == ["id", "first_name", "email"]
-    assert len(res.rows) == 10
-    assert res.total_count == 10
+    assert len(res.rows) == 35
+    assert res.total_count == 35

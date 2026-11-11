@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -9,8 +10,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from api.config import settings
-from api.schemas import QueryRequest, QueryResponse
-from api.database import get_engine, get_schema_ddl, execute_query
+from api.schemas import QueryRequest, QueryResponse, DatabaseSchemaResponse
+from api.database import (
+    get_engine,
+    get_schema_ddl,
+    get_schema_metadata,
+    invalidate_schema_cache,
+    execute_query,
+)
 from api.gemini_service import GeminiService, get_gemini_service
 from api.security import (
     validate_and_sanitize_input,
@@ -26,10 +33,22 @@ def _get_client_ip(request: Request) -> str:
 # Configure SlowAPI limiter (global limit: 30 requests per minute)
 limiter = Limiter(key_func=get_remote_address, default_limits=["30/minute"])
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Warm schema discovery cache at application startup
+    try:
+        eng = get_engine()
+        get_schema_metadata(eng)
+        logger.info("Database schema discovered and cached at startup")
+    except Exception as exc:
+        logger.warning("Could not warm schema cache at startup: %s", exc)
+    yield
+
 app = FastAPI(
     title="Text-to-SQL Query Generator API",
     version="2.0.0",
-    description="Natural language to secure SQLite SQL query generator powered by Gemini 2.5 Flash Lite"
+    description="Natural language to secure SQLite SQL query generator powered by Gemini 2.5 Flash Lite",
+    lifespan=lifespan,
 )
 
 app.state.limiter = limiter
@@ -72,6 +91,25 @@ async def health_check():
         "model": settings.model_name,
         "db": settings.database_url
     }
+
+
+@app.get("/schema", response_model=DatabaseSchemaResponse)
+async def get_schema_endpoint(engine: Engine = Depends(get_engine)):
+    """
+    Returns discovered database schema including all tables, columns,
+    primary keys, foreign keys, row counts, and complete DDL.
+    """
+    return get_schema_metadata(engine)
+
+
+@app.post("/refresh-schema", response_model=DatabaseSchemaResponse)
+async def refresh_schema_endpoint(engine: Engine = Depends(get_engine)):
+    """
+    Invalidates the in-memory schema cache and re-discovers the schema
+    directly from sqlite_master and database PRAGMAs.
+    """
+    invalidate_schema_cache()
+    return get_schema_metadata(engine, force_refresh=True)
 
 
 @app.post("/query", response_model=QueryResponse)

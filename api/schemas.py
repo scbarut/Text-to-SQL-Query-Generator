@@ -1,4 +1,4 @@
-from typing import Any, List
+from typing import Any, List, Optional
 from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
@@ -7,6 +7,27 @@ class QueryRequest(BaseModel):
 class ColumnInfo(BaseModel):
     name: str
     type: str = "TEXT"
+
+class ColumnMetadata(ColumnInfo):
+    primary_key: bool = False
+    nullable: bool = True
+
+class ForeignKeyInfo(BaseModel):
+    column: str
+    referred_table: str
+    referred_column: str
+
+class TableSchema(BaseModel):
+    name: str
+    columns: List[ColumnMetadata]
+    foreign_keys: List[ForeignKeyInfo] = Field(default_factory=list)
+    row_count: Optional[int] = None
+    ddl: str
+
+class DatabaseSchemaResponse(BaseModel):
+    database_name: str
+    tables: List[TableSchema]
+    ddl: str
 
 class QueryResponse(BaseModel):
     sql: str
