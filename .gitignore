@@ -16,7 +16,9 @@ lerna-debug.log*
 # Environment & Secrets
 .env
 .env*.local
+.env.*
 !.env.example
+!api/.env.example
 
 # Python Caches & Bytecode
 __pycache__/

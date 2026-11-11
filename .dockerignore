@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+
+# Node & Frontend
+node_modules
+dist
+dist-ssr
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.deepeval/
+
+# Environment secrets
+.env
+.env*.local
+
+# IDE & Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Temporary SQLite journals
+*.db-journal
+*.db-wal
+*.db-shm
+
