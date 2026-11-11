@@ -14,6 +14,9 @@ import {
   Table as TableIcon,
   Search,
   PanelLeft,
+  BarChart3,
+  FileSpreadsheet,
+  FileCode,
 } from 'lucide-react';
 import {
   SchemaExplorer,
@@ -21,6 +24,8 @@ import {
   ColumnMetadata,
 } from './components/SchemaExplorer';
 import { ExampleQueries } from './components/ExampleQueries';
+import { ChartView, AnalysisData } from './components/ChartView';
+import { exportToCsv, exportToJson } from './utils/exportUtils';
 
 interface QueryResponse {
   sql: string;
@@ -53,6 +58,12 @@ export function App() {
   const [sqlExpanded, setSqlExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
   const [filterText, setFilterText] = useState('');
+
+  // Analysis & View states
+  const [viewMode, setViewMode] = useState<'table' | 'chart'>('table');
+  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [customAnalyzing, setCustomAnalyzing] = useState(false);
 
   // Dynamic Schema Explorer states
   const [schema, setSchema] = useState<DatabaseSchemaResponse | null>(null);
@@ -97,6 +108,7 @@ export function App() {
         });
       }
     } catch (err: unknown) {
+      console.error('Schema refresh error:', err);
       toast.error('Connection Error', {
         description: 'Failed to connect to backend to refresh schema.',
       });
@@ -173,6 +185,7 @@ export function App() {
       setResult(data);
       setInlineError(null);
       setFilterText('');
+      fetchAnalysis(data.columns, data.rows, undefined, false);
     } catch (err: unknown) {
       const message =
         err instanceof Error
@@ -184,6 +197,96 @@ export function App() {
       console.error('Query execution error:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAnalysis = useCallback(
+    async (
+      columns: ColumnMetadata[],
+      rows: (string | number | boolean | null)[][],
+      userRequest?: string,
+      useLlm = false
+    ) => {
+      if (rows.length === 0) {
+        setAnalysis(null);
+        return;
+      }
+      try {
+        if (useLlm) {
+          setCustomAnalyzing(true);
+        } else {
+          setAnalysisLoading(true);
+        }
+
+        const response = await fetch(`${API_BASE_URL}/analyze`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            columns: columns.map((col) => ({ name: col.name, type: col.type })),
+            rows,
+            user_request: userRequest,
+            use_llm: useLlm,
+          }),
+        });
+
+        if (response.ok) {
+          const data: AnalysisData = await response.json();
+          setAnalysis(data);
+          if (useLlm) {
+            setViewMode('chart');
+            toast.success('Visualization Updated', {
+              description: `Generated ${data.chart_type} chart configuration.`,
+            });
+          }
+        } else {
+          if (useLlm) {
+            toast.error('Visualization Failed', {
+              description: 'Unable to customize visualization.',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch analysis:', err);
+      } finally {
+        setAnalysisLoading(false);
+        setCustomAnalyzing(false);
+      }
+    },
+    []
+  );
+
+  const handleCustomAnalyze = async (userReq: string) => {
+    if (!result) return;
+    await fetchAnalysis(result.columns, result.rows, userReq, true);
+  };
+
+  const handleExportCsv = () => {
+    if (!result || result.rows.length === 0) {
+      toast.error('No Data', { description: 'There is no data to export.' });
+      return;
+    }
+    try {
+      exportToCsv(result.columns, result.rows, `query_results_${Date.now()}.csv`);
+      toast.success('CSV Exported', { description: 'Results downloaded as CSV.' });
+    } catch (err) {
+      console.error('CSV export failed:', err);
+      toast.error('Export Error', { description: 'Failed to export CSV.' });
+    }
+  };
+
+  const handleExportJson = () => {
+    if (!result || result.rows.length === 0) {
+      toast.error('No Data', { description: 'There is no data to export.' });
+      return;
+    }
+    try {
+      exportToJson(result.columns, result.rows, `query_results_${Date.now()}.json`);
+      toast.success('JSON Exported', { description: 'Results downloaded as JSON.' });
+    } catch (err) {
+      console.error('JSON export failed:', err);
+      toast.error('Export Error', { description: 'Failed to export JSON.' });
     }
   };
 
@@ -496,96 +599,163 @@ export function App() {
                 )}
               </div>
 
-              {/* Interactive Data Table */}
-              <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
-                <div className="px-6 py-4 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {/* Query Results Section with Table/Chart Toggle and Export Options */}
+              <div className="space-y-4">
+                {/* Results Action & View Bar */}
+                <div className="bg-white rounded-xl shadow-xs border border-slate-200 px-6 py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-2">
                     <TableIcon className="w-4 h-4 text-blue-600" />
                     <h2 className="text-sm font-bold text-slate-800">
                       Query Results
                     </h2>
                     <span className="text-xs text-slate-500 font-medium">
-                      (Displaying {filteredRows.length} of {result.total_count}{' '}
-                      {result.total_count === 1 ? 'row' : 'rows'})
+                      ({result.total_count} {result.total_count === 1 ? 'record' : 'records'})
                     </span>
                   </div>
 
-                  {/* In-table Search Filter */}
-                  {result.rows.length > 0 && (
-                    <div className="relative w-full sm:w-64">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        value={filterText}
-                        onChange={(e) => setFilterText(e.target.value)}
-                        placeholder="Filter records..."
-                        className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-800"
-                      />
+                  {/* View Mode Toggle Switch */}
+                  <div className="flex items-center justify-center">
+                    <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('table')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          viewMode === 'table'
+                            ? 'bg-white text-blue-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <TableIcon className="w-3.5 h-3.5" />
+                        <span>Table View</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setViewMode('chart')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                          viewMode === 'chart'
+                            ? 'bg-white text-blue-700 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        <BarChart3 className="w-3.5 h-3.5" />
+                        <span>Chart View</span>
+                        {analysis?.chart_type && analysis.chart_type !== 'table' && (
+                          <span className="ml-1 text-[10px] px-1.5 py-0.2 bg-blue-100 text-blue-700 rounded-full font-bold uppercase">
+                            {analysis.chart_type}
+                          </span>
+                        )}
+                      </button>
                     </div>
-                  )}
+                  </div>
+
+                  {/* Export Options & Filter */}
+                  <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    {viewMode === 'table' && result.rows.length > 0 && (
+                      <div className="relative w-full sm:w-48">
+                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                        <input
+                          type="text"
+                          value={filterText}
+                          onChange={(e) => setFilterText(e.target.value)}
+                          placeholder="Filter records..."
+                          className="w-full pl-7 pr-2.5 py-1 text-xs rounded-md border border-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 focus:border-blue-500 text-slate-800"
+                        />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleExportCsv}
+                      className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg shadow-2xs hover:bg-slate-50 transition-colors"
+                      title="Export dataset to CSV file"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportJson}
+                      className="flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-white border border-slate-200 px-2.5 py-1.5 rounded-lg shadow-2xs hover:bg-slate-50 transition-colors"
+                      title="Export dataset to JSON file"
+                    >
+                      <FileCode className="w-3.5 h-3.5 text-blue-600" />
+                      <span>JSON</span>
+                    </button>
+                  </div>
                 </div>
 
-                {result.rows.length === 0 ? (
-                  <div className="p-12 text-center text-slate-500 text-sm">
-                    No records found matching the query.
-                  </div>
-                ) : filteredRows.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500 text-sm">
-                    No records match your filter &ldquo;{filterText}&rdquo;.
-                  </div>
+                {/* View Content (Table or Chart) */}
+                {viewMode === 'chart' ? (
+                  <ChartView
+                    analysis={analysis}
+                    loading={analysisLoading}
+                    onCustomAnalyze={handleCustomAnalyze}
+                    isAnalyzing={customAnalyzing}
+                  />
                 ) : (
-                  <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-                      <thead className="bg-slate-50/90 sticky top-0 z-10 backdrop-blur-xs">
-                        <tr>
-                          {result.columns.map((col, idx) => (
-                            <th
-                              key={idx}
-                              scope="col"
-                              className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap"
-                            >
-                              <div className="flex items-center gap-1.5">
-                                <span>{col.name}</span>
-                                <span className="text-[10px] lowercase px-1.5 py-0.5 rounded-sm bg-slate-200/70 text-slate-600 font-normal">
-                                  {col.type}
-                                </span>
-                              </div>
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-slate-100">
-                        {filteredRows.map((row, rowIdx) => (
-                          <tr
-                            key={rowIdx}
-                            className="hover:bg-blue-50/30 transition-colors"
-                          >
-                            {row.map((cell, cellIdx) => (
-                              <td
-                                key={cellIdx}
-                                className="px-6 py-3.5 whitespace-nowrap text-slate-700 text-xs font-mono"
+                  <div className="bg-white rounded-xl shadow-xs border border-slate-200 overflow-hidden">
+                    {result.rows.length === 0 ? (
+                      <div className="p-12 text-center text-slate-500 text-sm">
+                        No records found matching the query.
+                      </div>
+                    ) : filteredRows.length === 0 ? (
+                      <div className="p-8 text-center text-slate-500 text-sm">
+                        No records match your filter &ldquo;{filterText}&rdquo;.
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                        <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                          <thead className="bg-slate-50/90 sticky top-0 z-10 backdrop-blur-xs">
+                            <tr>
+                              {result.columns.map((col, idx) => (
+                                <th
+                                  key={idx}
+                                  scope="col"
+                                  className="px-6 py-3 text-xs font-semibold text-slate-700 uppercase tracking-wider whitespace-nowrap"
+                                >
+                                  <div className="flex items-center gap-1.5">
+                                    <span>{col.name}</span>
+                                    <span className="text-[10px] lowercase px-1.5 py-0.5 rounded-sm bg-slate-200/70 text-slate-600 font-normal">
+                                      {col.type}
+                                    </span>
+                                  </div>
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-slate-100">
+                            {filteredRows.map((row, rowIdx) => (
+                              <tr
+                                key={rowIdx}
+                                className="hover:bg-blue-50/30 transition-colors"
                               >
-                                {cell === null ? (
-                                  <span className="text-slate-400 italic">null</span>
-                                ) : typeof cell === 'boolean' ? (
-                                  <span
-                                    className={`px-1.5 py-0.5 rounded-sm text-[11px] font-medium ${
-                                      cell
-                                        ? 'bg-emerald-50 text-emerald-700'
-                                        : 'bg-rose-50 text-rose-700'
-                                    }`}
+                                {row.map((cell, cellIdx) => (
+                                  <td
+                                    key={cellIdx}
+                                    className="px-6 py-3.5 whitespace-nowrap text-slate-700 text-xs font-mono"
                                   >
-                                    {cell ? 'true' : 'false'}
-                                  </span>
-                                ) : (
-                                  String(cell)
-                                )}
-                              </td>
+                                    {cell === null ? (
+                                      <span className="text-slate-400 italic">null</span>
+                                    ) : typeof cell === 'boolean' ? (
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded-sm text-[11px] font-medium ${
+                                          cell
+                                            ? 'bg-emerald-50 text-emerald-700'
+                                            : 'bg-rose-50 text-rose-700'
+                                        }`}
+                                      >
+                                        {cell ? 'true' : 'false'}
+                                      </span>
+                                    ) : (
+                                      String(cell)
+                                    )}
+                                  </td>
+                                ))}
+                              </tr>
                             ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

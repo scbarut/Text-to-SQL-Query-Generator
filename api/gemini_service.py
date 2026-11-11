@@ -1,9 +1,10 @@
+import json
 import os
-from typing import Optional
+from typing import Any, List, Optional
 from google import genai
 from google.genai import types
 from api.config import settings
-from api.schemas import GeminiQueryOutput
+from api.schemas import ColumnInfo, GeminiQueryOutput, GeminiAnalysisOutput
 
 SYSTEM_INSTRUCTION_TEMPLATE = """You are a secure, high-precision SQL assistant.
 Convert the user's natural language question into a single, valid SQLite SQL query based strictly on the provided Database Schema.
@@ -16,6 +17,18 @@ Rules:
 
 Database Schema:
 {schema_ddl}
+"""
+
+ANALYSIS_SYSTEM_INSTRUCTION = """You are an expert data analyst and visualization specialist.
+Analyze the provided tabular data columns and sample rows based on the user's visualization request.
+Select the optimal chart type ('bar', 'line', 'pie', 'area', 'stat', or 'table'), identify the x_key (category/date) and y_keys (numeric metrics), generate a clear title, and provide a concise 1-2 sentence Insight explaining the primary data finding.
+
+Rules:
+1. Chart type must strictly be one of: 'bar', 'line', 'pie', 'area', 'stat', 'table'.
+2. x_key must be an existing column name in the provided columns (or null for stat/table).
+3. y_keys must only contain existing numeric column names.
+4. If the user asks for a specific chart format (e.g. 'as pie chart', 'trend over time'), strictly fulfill it.
+5. The insight must be factual, concise (1-2 sentences), directly derived from the data, and written in the same language as the user's request.
 """
 
 class GeminiService:
@@ -51,6 +64,40 @@ class GeminiService:
         if not response.text:
             raise ValueError("Empty response received from Gemini model.")
         return GeminiQueryOutput.model_validate_json(response.text)
+
+    def analyze_data(
+        self,
+        user_request: str,
+        columns: List[ColumnInfo],
+        rows: List[List[Any]],
+    ) -> GeminiAnalysisOutput:
+        sample_data = {
+            "columns": [col.model_dump() for col in columns],
+            "sample_rows": rows[:20],
+            "total_row_count": len(rows),
+        }
+        prompt = (
+            f"User Request: {user_request}\n\n"
+            f"Dataset Summary:\n{json.dumps(sample_data, ensure_ascii=False, default=str)}"
+        )
+
+        config = types.GenerateContentConfig(
+            system_instruction=ANALYSIS_SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=GeminiAnalysisOutput,
+            temperature=0.0,
+        )
+
+        response = self.client.models.generate_content(
+            model=self.model_name,
+            contents=prompt,
+            config=config,
+        )
+
+        if not response.text:
+            raise ValueError("Empty response received from Gemini analysis model.")
+        return GeminiAnalysisOutput.model_validate_json(response.text)
+
 
 _gemini_service_instance: Optional[GeminiService] = None
 

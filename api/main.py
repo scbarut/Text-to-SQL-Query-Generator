@@ -10,7 +10,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from api.config import settings
-from api.schemas import QueryRequest, QueryResponse, DatabaseSchemaResponse
+from api.schemas import (
+    QueryRequest,
+    QueryResponse,
+    DatabaseSchemaResponse,
+    AnalyzeRequest,
+    AnalyzeResponse,
+)
+from api.analysis import analyze_query_result
 from api.database import (
     get_engine,
     get_schema_ddl,
@@ -152,4 +159,38 @@ async def query_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Query execution failed: {str(exc)}"
+        ) from exc
+
+
+@app.post("/analyze", response_model=AnalyzeResponse)
+@limiter.limit("30/minute")
+async def analyze_endpoint(
+    request: Request,
+    analyze_request: AnalyzeRequest,
+    gemini_service: GeminiService = Depends(get_gemini_service),
+):
+    """
+    Analyzes SQL query results to determine optimal chart type (heuristic or LLM-guided)
+    and returns chart configuration, formatted data, and domain insights.
+    """
+    try:
+        # Sanitize natural language request if provided
+        sanitized_user_request = None
+        if analyze_request.user_request:
+            sanitized_user_request = validate_and_sanitize_input(analyze_request.user_request)
+
+        return analyze_query_result(
+            columns=analyze_request.columns,
+            rows=analyze_request.rows,
+            user_request=sanitized_user_request,
+            use_llm=analyze_request.use_llm,
+            gemini_service=gemini_service,
+        )
+    except SecurityViolationError:
+        raise
+    except Exception as exc:
+        logger.error("Analysis failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Analysis failed: {str(exc)}"
         ) from exc
