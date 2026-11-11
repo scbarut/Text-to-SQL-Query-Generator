@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ResultTable } from '../ResultTable';
+import { ColumnMetadata } from '../SchemaExplorer';
 
 describe('ResultTable', () => {
-  const sampleColumns = [
-    { name: 'department', type: 'TEXT' },
-    { name: 'headcount', type: 'INTEGER' },
+  const sampleColumns: ColumnMetadata[] = [
+    { name: 'department', type: 'TEXT', primary_key: false, nullable: true },
+    { name: 'headcount', type: 'INTEGER', primary_key: false, nullable: true },
   ];
   const sampleRows = [
     ['Engineering', 12],

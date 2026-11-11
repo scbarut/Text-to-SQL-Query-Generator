@@ -237,7 +237,9 @@ export const ChartView: React.FC<ChartViewProps> = ({
                     outerRadius={110}
                     innerRadius={50}
                     paddingAngle={2}
-                    label={(entry) => `${entry[x_key]}: ${formatValue(entry[primaryY])}`}
+                    label={({ name, value }: { name?: unknown; value?: unknown }) =>
+                      `${String(name ?? '')}: ${formatValue(value)}`
+                    }
                   >
                     {data.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={PALETTE[index % PALETTE.length]} />
@@ -269,7 +271,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
                       fontSize: '12px',
                       boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
                     }}
-                    formatter={(val: unknown, name: string) => [formatValue(val), name]}
+                    formatter={(val: unknown, name?: unknown) => [formatValue(val), String(name || '')]}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                   {y_keys.map((yKey, index) => (
@@ -323,7 +325,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
                       borderRadius: '0.5rem',
                       fontSize: '12px',
                     }}
-                    formatter={(val: unknown, name: string) => [formatValue(val), name]}
+                    formatter={(val: unknown, name?: unknown) => [formatValue(val), String(name || '')]}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                   {y_keys.map((yKey, index) => (
@@ -373,7 +375,7 @@ export const ChartView: React.FC<ChartViewProps> = ({
                       fontSize: '12px',
                       boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
                     }}
-                    formatter={(val: unknown, name: string) => [formatValue(val), name]}
+                    formatter={(val: unknown, name?: unknown) => [formatValue(val), String(name || '')]}
                   />
                   <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
                   {y_keys.map((yKey, index) => (

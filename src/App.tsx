@@ -185,14 +185,18 @@ export function App() {
     [handleExecute]
   );
 
-  const handleCustomAnalyze = (userRequest: string) => {
+  const handleCustomAnalyze = async (userRequest: string): Promise<void> => {
     if (!result || result.rows.length === 0) return;
-    analyzeMutation.mutate({
-      columns: result.columns,
-      rows: result.rows,
-      user_request: userRequest,
-      use_llm: true,
-    });
+    try {
+      await analyzeMutation.mutateAsync({
+        columns: result.columns,
+        rows: result.rows,
+        user_request: userRequest,
+        use_llm: true,
+      });
+    } catch {
+      // Handled by mutation onError callback
+    }
   };
 
   const handleExportCsv = () => {
@@ -236,7 +240,13 @@ export function App() {
         schema={schema || null}
         loading={schemaLoading}
         refreshing={refreshSchemaMutation.isPending}
-        onRefresh={() => refreshSchemaMutation.mutate()}
+        onRefresh={async () => {
+          try {
+            await refreshSchemaMutation.mutateAsync();
+          } catch {
+            // Handled by mutation onError callback
+          }
+        }}
         onSelectQuery={(q) => handleSelectQuery(q, true)}
       />
 
