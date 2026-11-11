@@ -1,4 +1,4 @@
-# 🔍 Text-to-SQL Query Generator v2.0
+# 🔍 Text-to-SQL Query Generator
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109%2B-009688.svg)](https://fastapi.tiangolo.com/)
@@ -17,34 +17,36 @@ Powered by **Google Gemini 2.5 Flash Lite** with deterministic structured output
 
 ## 📑 Table of Contents
 
-- [Overview](#-overview)
-- [Key Features](#-key-features)
-- [System Architecture](#-system-architecture)
-- [Demo Database Schema](#-demo-database-schema)
-- [Tech Stack](#-tech-stack)
-- [Getting Started](#-getting-started)
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [Demo Database Schema](#demo-database-schema)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Environment Configuration](#environment-configuration)
   - [Option 1: Run with Docker Compose (Recommended)](#option-1-run-with-docker-compose-recommended)
   - [Option 2: Run Locally (Development)](#option-2-run-locally-development)
-- [API Reference](#-api-reference)
-- [Testing](#-testing)
-- [Project Structure](#-project-structure)
-- [Security Model](#-security-model)
-- [License](#-license)
+- [Example Queries](#example-queries-to-try)
+- [API Reference](#api-reference)
+- [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Security Model](#security-model)
+- [License](#license)
 
 ---
 
 ## 🌟 Overview
 
-Traditional Text-to-SQL prototypes often present severe production risks: executing arbitrary model outputs without validation, failing to restrict data-modifying commands (`DROP`, `DELETE`), hardcoding table schemas, and returning only flat tables without analytical context.
+**Text-to-SQL Query Generator** is a full-stack web application that translates natural language questions into safe, optimized SQL queries and visualizes the results instantly.
 
-**Text-to-SQL Query Generator v2.0** solves this with an end-to-end engineered architecture:
+Instead of writing complex SQL manually, users can simply ask questions in plain English or Turkish (e.g., *"What is the average salary by department?"*). The system safely generates and validates the SQL, executes it against a read-only database, and presents both the raw data and interactive charts.
 
-- **Strict Read-Only Guarantee**: SQL is parsed into an Abstract Syntax Tree (AST); only `SELECT` and `WITH` (CTE) statements are permitted. Destructive operations are physically impossible via read-only database connections (`mode=ro`).
-- **Dynamic Schema Discovery**: Connect any SQLite database by changing an environment variable—tables, columns, foreign keys, and DDL are automatically discovered and supplied to the model.
-- **Hybrid Analysis & Visualizations**: Tabular results are instantly paired with automated chart suggestions (heuristic classification) or custom natural language chart requests via Gemini.
-- **Production UI**: Includes query history, clickable sample queries, dark/light mode, schema browser, CSV/JSON data export, and PNG chart export.
+### Key Highlights
+- **Safety First**: Every query is strictly validated via Abstract Syntax Tree (AST) analysis. Destructive operations (`DROP`, `DELETE`, `UPDATE`) are blocked, and database connections are physically read-only (`mode=ro`).
+- **Dynamic Schema Discovery**: Automatically adapts to any SQLite database without manual configuration or static ORM models.
+- **Instant Visualizations**: Automatically recommends the best chart type (Bar, Line, Pie, Area, or Stat cards) for the data with zero added latency.
+- **Modern Dashboard**: Features query history, dynamic schema explorer, dark/light mode, and one-click data exports (CSV, JSON, and PNG).
 
 ---
 
@@ -94,36 +96,24 @@ Traditional Text-to-SQL prototypes often present severe production risks: execut
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Client Layer"]
-        User(["User"]) -->|"Natural language question"| UI["React 18 + Vite Dashboard"]
-        UI -->|"POST /query"| API["FastAPI Backend"]
+    User(["User Query"]) --> UI["React Dashboard (Vite + Tailwind)"]
+    UI -->|"POST /query"| API["FastAPI Backend"]
+
+    subgraph Pipeline ["Security & AI Processing"]
+        API --> Sanitize["Input Sanitization & Injection Guard"]
+        Sanitize --> Gemini["Gemini 2.5 Flash Lite<br/>(Structured Output + Schema DDL)"]
+        Gemini --> AST{"SQL AST Validator<br/>(SELECT / WITH only)"}
     end
 
-    subgraph Security ["Security & Guardrail Pipeline"]
-        API --> InputCheck{"Input Sanitizer &<br/>Injection Guard"}
-        InputCheck -->|"Validation failure"| ErrorCard["Inline Error Card<br/>(HTTP 400 Bad Request)"]
-        InputCheck -->|"Sanitized query"| SchemaDiscovery["Dynamic Schema Discovery<br/>(sqlite_master DDL)"]
-    end
+    AST -->|"Blocked / Destructive"| Reject["Reject (HTTP 400 Bad Request)"]
+    AST -->|"Verified SQL"| DB[("SQLite Database<br/>(Read-Only mode=ro)")]
 
-    subgraph LLM ["AI Query Generation"]
-        SchemaDiscovery -->|"Prompt + DDL Context"| Gemini["Google Gemini 2.5 Flash Lite<br/>(Structured Output)"]
-        Gemini -->|"Structured JSON (sql + explanation)"| ASTCheck{"SQL AST Whitelist &<br/>Keyword Guard"}
-        ASTCheck -->|"Rejected (DML/DDL or multi-statement)"| ErrorCard
-    end
+    DB --> Analysis{"Hybrid Analysis"}
+    Analysis -->|"Automatic"| Heuristic["Heuristic Classifier (0ms)"]
+    Analysis -->|"Custom Prompt"| LLMChart["Gemini Visual Analyst"]
 
-    subgraph Database ["Execution Layer"]
-        ASTCheck -->|"Verified SELECT / WITH"| Engine[("SQLite Database<br/>(Strict Read-Only mode=ro)")]
-    end
-
-    subgraph Analytics ["Hybrid Analysis & Visualizations"]
-        Engine -->|"Tabular rows and columns"| Router{"Analysis Router"}
-        Router -->|"Heuristic Path (Zero Latency)"| Heuristic["Rule-Based Classifier<br/>(Bar, Line, Pie, Stat)"]
-        Router -->|"Custom Chart Prompt"| LLMVisual["Gemini Visual Analyst<br/>+ 1-2 Sentence Insight"]
-        Heuristic --> Presentation["Interactive Table & Recharts View"]
-        LLMVisual --> Presentation
-    end
-
-    Presentation --> Exports["CSV, JSON & PNG Export"]
+    Heuristic --> Results["Interactive Table & Recharts"]
+    LLMChart --> Results
 ```
 
 ---
